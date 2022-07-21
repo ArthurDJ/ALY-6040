@@ -17,7 +17,7 @@ DS <- read.csv("owid-covid-data.csv", header = TRUE, sep = ",")
 
 #What did you do with the data in the context of exploration? What is the use-case?
 DS$date <- as.Date(DS$date, format = "%Y-%m-%d")
-Covid <- DS[DS$date > "2021-01-01" & DS$date < "2022-07-01", ]
+Covid <- DS[DS$date > "2021-01-01" & DS$date < "2022-07-01",]
 USA <- filter(Covid, Covid$location == "United States")
 CAN <- filter(Covid, Covid$location == "Canada")
 USAdf <-
@@ -153,14 +153,61 @@ plot(
 install.packages("mltools")
 library(mltools)
 library(data.table)
+USAdf$USA.stringency_index[USAdf$USA.stringency_index >= 70] <- 4
+USAdf$USA.stringency_index[USAdf$USA.stringency_index >= 60 &
+                             USAdf$USA.stringency_index <= 70] <- 3
+USAdf$USA.stringency_index[USAdf$USA.stringency_index >= 50 &
+                             USAdf$USA.stringency_index <= 60] <- 2
+USAdf$USA.stringency_index[USAdf$USA.stringency_index >= 40 &
+                             USAdf$USA.stringency_index <= 50] <- 1
+USAdf$USA.stringency_index[USAdf$USA.stringency_index >= 30 &
+                             USAdf$USA.stringency_index <= 40] <- 0
 USAdf$USA.stringency_index <- as.factor(USAdf$USA.stringency_index)
 levels(USAdf$USA.stringency_index)
 One_Hot_USA_Stringency_index <-
   one_hot(as.data.table(USAdf$USA.stringency_index))
 View(One_Hot_USA_Stringency_index)
 
+CANdf$CAN.stringency_index[CANdf$CAN.stringency_index >= 70] <- 4
+CANdf$CAN.stringency_index[CANdf$CAN.stringency_index >= 60 &
+                             CANdf$CAN.stringency_index <= 70] <- 3
+CANdf$CAN.stringency_index[CANdf$CAN.stringency_index >= 50 &
+                             CANdf$CAN.stringency_index <= 60] <- 2
+CANdf$CAN.stringency_index[CANdf$CAN.stringency_index >= 40 &
+                             CANdf$CAN.stringency_index <= 50] <- 1
+CANdf$CAN.stringency_index[CANdf$CAN.stringency_index >= 20 &
+                             CANdf$CAN.stringency_index <= 30] <- 0
 CANdf$CAN.stringency_index <- as.factor(CANdf$CAN.stringency_index)
 levels(CANdf$CAN.stringency_index)
 One_Hot_CAN_Stringency_index <-
   one_hot(as.data.table(CANdf$CAN.stringency_index))
 View(One_Hot_CAN_Stringency_index)
+
+USAdf$USA.probably_new_per_million <-
+  (USAdf$USA.total_cases_per_million - USAdf$USA.total_deaths_per_million) *
+  USAdf$USA.reproduction_rate / 100
+
+CANdf$CAN.probably_new_per_million <-
+  (CANdf$CAN.total_cases_per_million - CANdf$CAN.total_deaths_per_million) *
+  CANdf$CAN.reproduction_rate / 100
+
+
+par(mfcol = c(3, 2))
+boxplot(USAdf$USA.total_cases_per_million,
+        ylab = "total cases(per million)",
+        main = "USA total cases")
+boxplot(USAdf$USA.total_deaths_per_million,
+        ylab = "total deaths(per million)",
+        main = "USA total deaths")
+boxplot(USAdf$USA.new_cases_per_million,
+        ylab = "new cases(per million)",
+        main = "USA new cases")
+boxplot(CANdf$CAN.total_cases_per_million,
+        ylab = "total cases(per million)",
+        main = "CAN total cases")
+boxplot(CANdf$CAN.total_deaths_per_million,
+        ylab = "total deaths(per million)",
+        main = "CAN total deaths")
+boxplot(CANdf$CAN.new_cases_per_million,
+        ylab = "new cases(per million)",
+        main = "CAN new cases")
