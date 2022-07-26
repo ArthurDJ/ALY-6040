@@ -1,0 +1,289 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+#Installing libraries
+install.packages('rpart')
+install.packages('caret')
+install.packages('rpart.plot')
+install.packages('rattle')
+install.packages('readxl')
+install.packages('dplyr')
+install.packages('funModeling')
+install.packages('caretEnsemble')
+install.packages('pROC')
+install.packages('sail')
+install.packages("microbenchmark")
+```
+
+```{r}
+#Loading libraries
+library(rpart)
+library(caret)
+library(rattle)
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(Hmisc)
+library(corrplot)
+library(tidyverse)
+library(glue)
+library(corrr)
+library(funModeling)
+library(rpart.plot)
+library(caretEnsemble)
+library(microbenchmark)
+```
+
+```{r}
+#Reading the data set as a dataframe
+MR_data <- read_excel("mushrooms.xlsx")
+```
+
+```{r}
+# View data set data type and other information
+str(MR_data)
+summary(MR_data)
+head(MR_data, 5)
+
+# Check if there are missing values in the data
+sum(is.na(MR_data))
+
+# Deleting redundant variable `veil.type`
+MR_data$veil.type <- NULL
+
+```
+
+```{r}
+MR_data <- MR_data[,-grep("veil.type",colnames(MR_data))]
+
+#Coersion & Clean - Conert all variables to numeric except target(class)
+data_x <-
+  data.frame(sapply(MR_data[2:21], function (x)
+    as.numeric(as.factor(x))))
+mushrooms <- data.frame(data_x, class = MR_data$class)
+
+#Find correlations
+cor_data <- (
+  v_corr = mushrooms %>%
+    mutate(class = as.numeric(class)) %>%
+    correlate() %>%
+    stretch() %>%
+    mutate(r2 = r * r) %>%
+    arrange(-r2)
+)
+cor_data
+```
+
+```{r}
+# Plot distributions of all variables
+var_selection <- mushrooms %>% select(-class) %>% names()
+plotar(
+  data = mushrooms,
+  input = var_selection,
+  target = "class",
+  plot_type = "histdens"
+)
+```
+
+```{r}
+cross_plot(
+  data = mushrooms,
+  input = var_selection,
+  target = "class",
+  plot_type = "percentual"
+)
+
+```
+
+```{r}
+#Data splicing
+set.seed(20226040)
+train <-
+  sample(1:nrow(mushrooms),
+         size = ceiling(0.80 * nrow(mushrooms)),
+         replace = FALSE)
+
+# Training set
+mushrooms_train <- mushrooms[train, ]
+mushrooms_train_x <- mushrooms_train %>% select(-class)
+mushrooms_train_y <- mushrooms_train$class
+
+
+# Test set
+mushrooms_test <- mushrooms[-train, ]
+mushrooms_test_x <- mushrooms_test %>% select(-class)
+mushrooms_test_y <- mushrooms_test$class
+
+
+```
+
+```{r}
+# Evaluate Algorithms
+myFolds <- createFolds(mushrooms_train_y, k = 10)
+control_summaryFunction = get("twoClassSummary")
+algorithmList <- c('rpart', 'ranger',"gbm")
+
+#Set up Control
+Control <- trainControl(method = "repeatedcv",
+                        classProbs = T, 
+                        summaryFunction = control_summaryFunction, 
+                        savePredictions = T,
+                        index = myFolds,
+                        allowParallel = T,
+                        repeats = 3,
+                        seeds = set.seed(6040))
+
+# Run 3 algorithms using 10-fold cross validations with 3 repeats
+
+models <- caretList(x = mushrooms_train_x, 
+                    y = mushrooms_train_y, 
+                    trControl = Control, 
+                    methodList = algorithmList,
+                    metric = "ROC")
+
+#Select Best Model
+results <- resamples(models)
+# Summary(results)
+summary(results)
+dotplot(results, metric = c("ROC","Accuracy"))
+bwplot(results)
+
+```
+
+```{r}
+varImp(models$rpart)$importance %>% 
+  as.data.frame() %>%
+  rownames_to_column() %>%
+  arrange(Overall) %>%
+  mutate(rowname = forcats::fct_inorder(rowname)) %>%
+  ggplot() +
+  geom_col(aes(x = rowname, y = Overall),fill = "black") +
+  coord_flip() +
+  labs(x = NULL) +
+  theme_minimal()
+```
+
+```{r}
+# Test model on validation
+
+# Transform the validation dataset
+pred_validation <- predict(models$ranger, mushrooms_test_x)
+# Prepare the validation dataset for making new predictions.
+CM_Validation <-
+  confusionMatrix(pred_validation, as.factor(mushrooms_test_y))
+
+# Plot Validation Set Confussion Matrix
+plotConfusionMatrix <- function(mushrooms_test, sSubtitle) {
+  df <- data.frame(pred_validation, mushrooms_test$class)
+  label <- c("Predicted", "True")
+  names(df) <- label
+  cf <- plyr::count(df)
+  cf[label][cf[label] == 0] <- "P"
+  cf[label][cf[label] == 1] <- "E"
+  
+  ggplot(cf, aes(x = True, y = Predicted)) +
+    labs(
+      title = "Confusion matrix",
+      subtitle = sSubtitle,
+      caption = glue("Accuracy: {CM_Validation$overall['Accuracy']}")
+    ) +
+    geom_tile(aes(fill = freq), color = "grey") +
+    geom_text(aes(label = sprintf("%1.0f", freq)), vjust = 1) +
+    scale_fill_gradient(low = "lightgreen", high = "green") +
+    theme_minimal() + theme(legend.position = "none")
+}
+
+plotConfusionMatrix(mushrooms_test, "Prediction on Validation Set using Ranger RF")
+```
+
+```{r}
+# Runtime analysis
+control_summaryFunction = get("twoClassSummary")
+
+Control <- trainControl(
+  summaryFunction = control_summaryFunction,
+  number = 1,
+  classProbs = T,
+  repeats = 1,
+  seeds = set.seed(6040)
+)
+
+model_method = function(model_name) {
+  models <- caretList(
+    x = mushrooms_train_x,
+    y = mushrooms_train_y,
+    trControl = Control,
+    methodList = model_name,
+    metric = "ROC"
+  )
+}
+
+
+microbenchmark(
+  times = 10,
+  model_method("rpart"),
+  model_method("ranger"),
+  model_method("gbm")
+)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# Decision Tree Parameter tuning optimization
+dtree_MR <- rpart(class~.,data = mushrooms_train, method = 'class',
+               parms = list(split = 'information'))
+dtree_MR$cptable
+plotcp(dtree_MR)
+```
+
+```{r}
+#Pruning according to the complexity, control the size of the tree
+dtree_MR.pruned <- prune(dtree_MR,cp=0.011)
+prp(dtree_MR.pruned,type = 2, extra = 104,
+    fallen.leaves = TRUE, main = 'Mushroom Decision Tree')
+```
+
+```{r}
+# Model evaluation
+dtree_MR.pred <-
+  predict(dtree_MR.pruned, mushrooms_test, type = 'class')
+dtree_MR.pref <- table(mushrooms_test_y, dtree_MR.pred,
+                       dnn = c('Actual', 'Predicted'))
+dtree_MR.pref
+TP <- dtree_MR.pref[1, 1]
+FP <- dtree_MR.pref[1, 2]
+TN <- dtree_MR.pref[2, 2]
+FN <- dtree_MR.pref[2, 1]
+acc <- (TP + TN) / (TP + FP + TN + FN)
+paste("acc = ", acc)
+
+
+Recall <- TP / (TP + FN)
+paste("Recall = ", Recall)
+
+Precision <- TP / (TP + FP)
+paste("Precision = ", Precision)
+
+F1_score <- (2 * Precision * Recall) / (Recall + Precision)
+paste("F1_score = ", F1_score)
+```
