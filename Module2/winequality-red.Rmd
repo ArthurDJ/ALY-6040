@@ -1,0 +1,141 @@
+---
+title: "winequality-red"
+author: "Jie Deng"
+date: '2022-07-27'
+output: word_document
+---
+
+```{r}
+# Import Data
+library(readr)
+Wine_data <- read_csv("winequality-red.csv")
+```
+
+```{r}
+# View data set data type and other information
+str(Wine_data)
+summary(Wine_data)
+```
+
+
+
+```{r}
+# Check if there are missing values in the data
+which(is.na(Wine_data))
+```
+
+
+
+```{r}
+barplot(table(Wine_data$quality))
+```
+
+
+```{r}
+Wine_data$taste[Wine_data$quality < 5] <- 'bad'
+Wine_data$taste[Wine_data$quality > 6] <- 'good'
+Wine_data$taste[Wine_data$quality == 6 | Wine_data$quality == 5] <- 'normal'
+barplot(table(Wine_data$taste))
+```
+
+
+```{r}
+Wine_data$taste <- as.factor(Wine_data$taste)
+table(Wine_data$taste)
+```
+
+```{r}
+Wine_data$nom_TSD <- scale(Wine_data$total_sulfur_dioxide, center = T, scale = T)
+Wine_data$nom_FSD <- scale(Wine_data$free_sulfur_dioxide, center = T, scale = T)
+```
+
+
+
+```{r}
+library(dplyr)
+
+#Data splicing
+set.seed(20226040)
+train <-
+  sample(1:nrow(Wine_data),
+         size = ceiling(0.80 * nrow(Wine_data)),
+         replace = FALSE)
+
+# Training set
+wine_train <- Wine_data[train,] %>% select(-c('quality', 'total_sulfur_dioxide', 'free_sulfur_dioxide'))
+wine_train_x <-
+  wine_train %>% select(-taste)
+wine_train_y <- wine_train$taste
+
+
+# Test set
+wine_test <- Wine_data[-train,]  %>% select(-c('quality', 'total_sulfur_dioxide', 'free_sulfur_dioxide'))
+wine_test_x <-
+  wine_test %>% select(-taste)
+wine_test_y <- wine_test$taste
+```
+
+```{r}
+library(randomForest)
+
+RFmodel <- randomForest(taste ~ ., data = wine_train, proximity = TRUE, importance = TRUE) 
+```
+
+
+```{r}
+RFmodel
+```
+
+```{r}
+prediction <- predict(RFmodel, newdata = wine_test_x)
+RFmodel.pref <- table(prediction, wine_test_y)
+RFmodel.pref
+```
+
+```{r}
+acc <- (0+22+254) / (length(wine_test_y))
+paste("acc = ", acc)
+```
+
+
+```{r}
+# View the number of nodes in the tree
+hist(treesize(RFmodel))
+```
+
+```{r}
+importance(RFmodel)
+```
+```{r}
+varImpPlot(RFmodel,sort = TRUE,main = "Feature Importance Visualization")
+```
+
+
+```{r}
+# Optimizing random forests
+
+library(caret)
+model <- train(
+  taste ~ .,
+  data = wine_train,
+  tuneLength = 5,
+  method = 'ranger',
+  trControl = trainControl(method = "cv", number = 5, verboseIter = FALSE)
+)
+
+model
+
+```
+
+```{r}
+# Plot model
+plot(model)
+```
+
+
+
+
+
+
+
+
